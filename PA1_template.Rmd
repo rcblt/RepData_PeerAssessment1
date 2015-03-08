@@ -2,16 +2,48 @@
 title: "Reproducible Research: Peer Assessment 1"
 author: rcblt@github.com
 output: 
-  html_document:
-    keep_md: true
+html_document:
+keep_md: true
 ---
+
+## Load required packages
+```{r}
+library(dplyr, lubridate)
+
+```
+
 
 
 ## Loading and preprocessing the data
+```{r}
+activity <- read.csv("activity.csv", 
+                     colClasses=c("integer", "Date", "integer"), 
+                     header= TRUE, 
+                     as.is= TRUE)
 
+```
 
 
 ## What is mean total number of steps taken per day?
+```{r}
+totalStepsByDay <- activity %>% 
+  filter(!is.na(steps)) %>% 
+  group_by(date) %>% 
+  summarise(total = sum(steps))
+hist(totalStepsByDay$total, 
+     breaks= 20, 
+     main= "Histogram of total steps per day", 
+     xlab= "Total steps",
+     xaxp= c(0, 22000, 22))
+legend("topright", 
+       legend= c(paste("Median", median(totalStepsByDay$total)), 
+                 paste("Mean", round(mean(totalStepsByDay$total), 2))), 
+       lty= c("solid", "dotted"), 
+       col= c("red", "blue"), 
+       lwd= 2)
+abline(v= median(totalStepsByDay$total), col= "red", lwd= 2)
+abline(v= mean(totalStepsByDay$total), col= "blue", lty= "dotted", lwd= 2)
+```
 
 
 
