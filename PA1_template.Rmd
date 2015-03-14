@@ -7,15 +7,16 @@ keep_md: true
 ---
 
 ## Load required packages
-```{r}
-library(dplyr, lubridate)
+```{r requirements, results='hide'}
+library(dplyr)
+library(lubridate)
 
 ```
 
 
 
 ## Loading and preprocessing the data
-```{r}
+```{r dataLoad}
 activity <- read.csv("activity.csv", 
                      colClasses=c("integer", "Date", "integer"), 
                      header= TRUE, 
@@ -23,9 +24,15 @@ activity <- read.csv("activity.csv",
 
 ```
 
+## Add minutes column
+```{r addMinutes}
+activity <- activity %>%
+  mutate(minutes= (interval %/% 100)*60 + interval%%100)
+```
+
 
 ## What is mean total number of steps taken per day?
-```{r}
+```{r totalByDay}
 totalStepsByDay <- activity %>% 
   filter(!is.na(steps)) %>% 
   group_by(date) %>% 
@@ -34,7 +41,10 @@ hist(totalStepsByDay$total,
      breaks= 20, 
      main= "Histogram of total steps per day", 
      xlab= "Total steps",
-     xaxp= c(0, 22000, 22))
+     xaxp= c(0, 22000, 22),
+     yaxp= c(0, 12, 6),
+     ylim= c(0, 12),
+     las= 1)
 legend("topright", 
        legend= c(paste("Median", median(totalStepsByDay$total)), 
                  paste("Mean", round(mean(totalStepsByDay$total), 2))), 
@@ -48,25 +58,27 @@ abline(v= mean(totalStepsByDay$total), col= "blue", lty= "dotted", lwd= 2)
 
 
 ## What is the average daily activity pattern?
-```{r}
-dailyAveregeSteps <- activity %>% 
+```{r dailyActivity}
+dailyAverageSteps <- activity %>% 
   filter(!is.na(steps)) %>% 
-  group_by(interval) %>% 
-  summarise(average= mean(steps))
-maxInterval <- dailyAveregeSteps[which.max(dailyAveregeSteps$average),]$interval
-with(dailyAveregeSteps, 
-     plot(interval, average, 
+  group_by(minutes) %>% 
+  summarise(average= mean(steps)) %>%
+  mutate(hm= sprintf("%d:%02d", minutes %/% 60, minutes %% 60))
+
+maxInterval <- dailyAverageSteps[which.max(dailyAverageSteps$average),]$hm
+
+with(dailyAverageSteps, 
+     plot(strptime(hm, "%H:%M"), average, 
           type= "l",
-          xaxp= c(0, 2400, 24),
           main= "Daily average steps on 5' intervals",
           xlab= "Interval",
-          ylab= "Steps"))
-abline(v= maxInterval, lwd= 2, col= "red", lty= "dotted")
+          ylab= "Steps",
+          las= 1))
 legend("topright", 
        legend= paste("Max average @", 
                      maxInterval, 
                      "=", 
-                     round(dailyAveregeSteps[dailyAveregeSteps$interval== maxInterval,]$average, 2)), 
+                     round(dailyAverageSteps[dailyAverageSteps$hm== maxInterval,]$average, 2)), 
        lty= "dotted", 
        col= "red", 
        lwd= 2)
@@ -75,11 +87,97 @@ legend("topright",
 
 
 ## Imputing missing values
-```{r}
+```{r missingValues}
 naRows <- activity %>% filter(is.na(steps)) %>% count()
 
+## Replacing NAs with average of that interval over all days
+imputedActivity <- left_join(activity, dailyAverageSteps, by= "minutes") %>% 
+  mutate(newSteps= ifelse(is.na(steps), round(average, 0), steps)) %>%
+  select(newSteps, date, interval) %>% 
+  rename(steps= newSteps) %>%
+  mutate(minutes= (interval %/% 100)*60 + interval%%100)
+
+imputedTotalStepsByDay <- imputedActivity %>% 
+  filter(!is.na(steps)) %>% 
+  group_by(date) %>% 
+  summarise(total = sum(steps))
+hist(imputedTotalStepsByDay$total, 
+     breaks= 20, 
+     main= "Histogram of total steps per day", 
+     xlab= "Total steps",
+     xaxp= c(0, 22000, 22),
+     yaxp= c(0, 18, 9),
+     ylim= c(0, 18),
+     las= 1)
+legend("topright", 
+       legend= c(paste("Median", median(imputedTotalStepsByDay$total)), 
+                 paste("Mean", round(mean(imputedTotalStepsByDay$total), 2))), 
+       lty= c("solid", "dotted"), 
+       col= c("red", "blue"), 
+       lwd= 2)
+abline(v= median(imputedTotalStepsByDay$total), col= "red", lwd= 2)
+abline(v= mean(imputedTotalStepsByDay$total), col= "blue", lty= "dotted", lwd= 2)
+
+hist(imputedTotalStepsByDay$total, 
+     breaks= 20, 
+     main= "Histogram of total steps per day", 
+     xlab= "Total steps",
+     xaxp= c(0, 22000, 22),
+     yaxp= c(0, 18, 9),
+     ylim= c(0, 18),
+     col= "blue",
+     las= 1)
+hist(totalStepsByDay$total, 
+     breaks= 20, 
+     xaxp= c(0, 22000, 22),
+     yaxp= c(0, 12, 6),
+     ylim= c(0, 12), 
+     col= rgb(1, 1, 1, 0.5), 
+     add= TRUE)
+legend("topright",
+       legend= c("Raw data", "Imputed NAs"),
+       text.col= c("blue", rgb(0.4, 0.4, 1))
+       )
+
+sumCompare <- data.frame(median= c(median(totalStepsByDay$total),
+                                   median(imputedTotalStepsByDay$total)),
+                         mean= c(mean(totalStepsByDay$total),
+                                 mean(imputedTotalStepsByDay$total)),
+                         row.names= c("Raw data", "Imputed NAs")
+                         )
+sumCompare
 ```
 
 
-
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r weekdays, fig.height= 8}
+workingDays <- 2:6
+
+weekdayActivity <- imputedActivity %>% 
+  mutate(day= factor(wday(date) %in% workingDays, 
+                     levels= c(FALSE, TRUE), 
+                     labels= c("Weekend", "Weekday"))
+         )
+
+weekdayAverageSteps <- weekdayActivity %>%
+  group_by(day,minutes) %>%
+  summarise(average= mean(steps)) %>%
+  mutate(hm= sprintf("%d:%02d", minutes %/% 60, minutes %% 60))
+
+par(mfrow= c(2, 1))
+with(subset(weekdayAverageSteps, day== "Weekend"), 
+     plot(strptime(hm, "%H:%M"), 
+          average, 
+          type= "l",
+          main= "Daily average steps on 5' intervals",
+          ylab= "Number of steps",
+          xlab= "Interval (weekdays)"
+          ))
+with(subset(weekdayAverageSteps, day== "Weekday"), 
+     plot(strptime(hm, "%H:%M"), 
+          average, 
+          type= "l",
+          ylab= "Number of steps",
+          xlab= "Interval (weekend)"))
+```
+
