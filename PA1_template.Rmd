@@ -2,36 +2,56 @@
 title: "Reproducible Research: Peer Assessment 1"
 author: rcblt@github.com
 output: 
-html_document:
-keep_md: true
+  html_document:
+    toc: true
+    toc_depth: 2
+    keep_md: true
 ---
 
-## Load required packages
+## Introduction
+
+This analysis uses data from a personal activity monitoring device that have been downloaded from [Activity Monitoring Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip).  
+As required by the assessment instructions this report is based on a fork of [this](https://github.com/rdpeng/RepData_PeerAssessment1) GitHub repository.
+
+
+## Required packages
+
+This report make use of the following R packages. We assume they are already installed and working.
 ```{r requirements, results='hide'}
 library(dplyr)
 library(lubridate)
-
 ```
 
-
-
 ## Loading and preprocessing the data
+
+Source data comes in the form of a comma-separated text file named `activity.csv` that is loaded in the data frame `activity`. It's assumed that the `activity.csv` is in the current working directory.
+
 ```{r dataLoad}
 activity <- read.csv("activity.csv", 
                      colClasses=c("integer", "Date", "integer"), 
                      header= TRUE, 
                      as.is= TRUE)
-
 ```
 
-## Add minutes column
+To make the following analysis and plotting easier we add the column `minutes` that contains the `interval` value converted in minutes
+
 ```{r addMinutes}
 activity <- activity %>%
   mutate(minutes= (interval %/% 100)*60 + interval%%100)
 ```
 
+These are few sample lines of the resulting data frame
+
+````{r sampleLines}
+activity[5000:5010,]
+```
 
 ## What is mean total number of steps taken per day?
+
+In order to generate an histogram of the total number of steps taken each day we filtered out NA values, then grouped by the column `date` and take the sum of the recorded `steps`. 
+
+Then we plot the histogram along with the **median** and **mean** that are represented as vertical lines in the plot.  
+
 ```{r totalByDay}
 totalStepsByDay <- activity %>% 
   filter(!is.na(steps)) %>% 
@@ -55,9 +75,13 @@ abline(v= median(totalStepsByDay$total), col= "red", lwd= 2)
 abline(v= mean(totalStepsByDay$total), col= "blue", lty= "dotted", lwd= 2)
 ```
 
-
+The average number of steps taken daily is `r options(scipen= 6); round(mean(totalStepsByDay$total), 2)` and the median is `r median(totalStepsByDay$total)`.
 
 ## What is the average daily activity pattern?
+
+First we filtered out NA values, then grouped the `activity` data by the column `minutes` and then computed the **mean** of the steps for each time interval. Finally, we added a new column `hm`  containing the hours and minutes of the interval represented as a character string 'hh:mm' for prettier plotting of the horizontal axis labels.
+The interval where there is the maximum average number of steps is obtained as well.
+
 ```{r dailyActivity}
 dailyAverageSteps <- activity %>% 
   filter(!is.na(steps)) %>% 
@@ -72,35 +96,43 @@ with(dailyAverageSteps,
           type= "l",
           main= "Daily average steps on 5' intervals",
           xlab= "Interval",
-          ylab= "Steps",
+          ylab= "Number of steps",
           las= 1))
 legend("topright", 
        legend= paste("Max average @", 
                      maxInterval, 
                      "=", 
-                     round(dailyAverageSteps[dailyAverageSteps$hm== maxInterval,]$average, 2)), 
-       lty= "dotted", 
-       col= "red", 
-       lwd= 2)
+                     round(dailyAverageSteps[dailyAverageSteps$hm== maxInterval,]$average, 2)))
 ```
 
-
+The maximum of the average number of steps is `r round(dailyAverageSteps[dailyAverageSteps$hm== maxInterval,]$average, 2)` at interval `r maxInterval`. 
 
 ## Imputing missing values
-```{r missingValues}
-naRows <- activity %>% filter(is.na(steps)) %>% count()
 
-## Replacing NAs with average of that interval over all days
+```{r naRows}
+naRows <- activity %>% filter(is.na(steps)) %>% count()
+````
+
+The source data set contains `r naRows` rows with value NA for the `steps` column.
+
+We decided to replace NA values with the average number of steps for that interval across all days. The number is rounded to the closest integer. The new dataset is `imputedActivity`.
+
+```{r imputingMissingValues}
 imputedActivity <- left_join(activity, dailyAverageSteps, by= "minutes") %>% 
   mutate(newSteps= ifelse(is.na(steps), round(average, 0), steps)) %>%
   select(newSteps, date, interval) %>% 
   rename(steps= newSteps) %>%
   mutate(minutes= (interval %/% 100)*60 + interval%%100)
+````
 
+This is the same histogram plot as before with imputed missing values
+
+````{r imputedTotalByDay}
 imputedTotalStepsByDay <- imputedActivity %>% 
   filter(!is.na(steps)) %>% 
   group_by(date) %>% 
   summarise(total = sum(steps))
+
 hist(imputedTotalStepsByDay$total, 
      breaks= 20, 
      main= "Histogram of total steps per day", 
@@ -117,7 +149,20 @@ legend("topright",
        lwd= 2)
 abline(v= median(imputedTotalStepsByDay$total), col= "red", lwd= 2)
 abline(v= mean(imputedTotalStepsByDay$total), col= "blue", lty= "dotted", lwd= 2)
+```
 
+This time the average number of steps taken daily is `r options(scipen= 6); round(mean(totalStepsByDay$total), 2)` and the median is `r median(totalStepsByDay$total)`.
+
+The follwing table summarise mean and average values before and after imputing NA values.
+
+Data Source | Median | Mean
+------------|--------|------
+Original data | `r median(totalStepsByDay$total)` | `r round(mean(totalStepsByDay$total), 2)`
+Imputed data | `r median(imputedTotalStepsByDay$total)` | `r round(mean(imputedTotalStepsByDay$total), 2)`
+
+Even though there is no big change in the above values in the two data sets the number of days where the steps taken were around the median value increased from 10 to 18 as clearly shown by the compared histograms in the following plot.
+
+````{r histComparison}
 hist(imputedTotalStepsByDay$total, 
      breaks= 20, 
      main= "Histogram of total steps per day", 
@@ -125,31 +170,29 @@ hist(imputedTotalStepsByDay$total,
      xaxp= c(0, 22000, 22),
      yaxp= c(0, 18, 9),
      ylim= c(0, 18),
-     col= "blue",
      las= 1)
 hist(totalStepsByDay$total, 
      breaks= 20, 
      xaxp= c(0, 22000, 22),
-     yaxp= c(0, 12, 6),
-     ylim= c(0, 12), 
-     col= rgb(1, 1, 1, 0.5), 
+     yaxp= c(0, 18, 9),
+     ylim= c(0, 18), 
+     col= rgb(0, 0, 0, 0.1), 
      add= TRUE)
 legend("topright",
-       legend= c("Raw data", "Imputed NAs"),
-       text.col= c("blue", rgb(0.4, 0.4, 1))
+       legend= c("Original data", "Imputed NAs"),
+       text.col= c(rgb(0, 0, 0, 0.5), "black")
        )
-
-sumCompare <- data.frame(median= c(median(totalStepsByDay$total),
-                                   median(imputedTotalStepsByDay$total)),
-                         mean= c(mean(totalStepsByDay$total),
-                                 mean(imputedTotalStepsByDay$total)),
-                         row.names= c("Raw data", "Imputed NAs")
-                         )
-sumCompare
 ```
 
-
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First we addeda new column `day` to the `imputedActivity` data frame. It's a factor containing the values `Weekend` or `Weekday` depending on which day the data have been collected.
+
+Then, we grouped first by `day` and then by `minutes` and finally we took the mean of the number of steps across all days at for each time interval.  
+As done previously we also added the column `hm` for better printing the x axis labels.
+
+Finally, we made two plots of the number of steps during the day, one for the weekends and one for the weekdays.
+
 ```{r weekdays, fig.height= 8}
 workingDays <- 2:6
 
@@ -171,13 +214,46 @@ with(subset(weekdayAverageSteps, day== "Weekend"),
           type= "l",
           main= "Daily average steps on 5' intervals",
           ylab= "Number of steps",
-          xlab= "Interval (weekdays)"
+          xlab= "Interval (weekend)",
+          ylim= c(0, 250),
+          yaxp= c(0, 250, 5),
+          las= 1
           ))
+
 with(subset(weekdayAverageSteps, day== "Weekday"), 
      plot(strptime(hm, "%H:%M"), 
           average, 
           type= "l",
           ylab= "Number of steps",
-          xlab= "Interval (weekend)"))
+          xlab= "Interval (weekday)",
+          ylim= c(0, 250),
+          yaxp= c(0, 250, 5),
+          las= 1
+          ))
+```
+
+Plotting the two graphs together can help to better show the different pattern of steps taken during the day on weekends and weekdays.
+
+```{r, comparedPlot}
+with(subset(weekdayAverageSteps, day== "Weekday"), 
+     plot(strptime(hm, "%H:%M"), 
+          average, 
+          type= "l",
+          main= "Daily average steps on 5' intervals",
+          ylab= "Number of steps",
+          xlab= "Interval",
+          col= "red",
+          las= 1
+          ))
+with(subset(weekdayAverageSteps, day== "Weekend"),
+     lines(strptime(hm, "%H:%M"),
+           average,
+           type= "l",
+           col= "blue"))
+legend("topright", 
+       legend= c("Weekday", "Weekend"), 
+       col= c("red", "blue"), 
+       lwd= 1)
+
 ```
 
